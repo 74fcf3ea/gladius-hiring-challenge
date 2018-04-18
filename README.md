@@ -66,6 +66,33 @@ My deployment script (awful cobbled-together thing that it is) is
 [mkplayground](mkplayground) in this directory. No warranties express
 or implied. :-) The manual steps above *should* be equivalent.
 
+## Usage
+
+Once your web server is serving the CGI script, you can go to it in a
+browser with a URL like `http://my.web.server/cgi-bin/gladiusapp`.
+
+You'll get a screen that looks like [1.png](screenshots/1.png) that
+says "Select Account".
+
+You put in the address of your account, and click either "View Application"
+or "Prepare Application".
+
+If you click "Prepare Application" it takes you to a screen that looks
+like [2.png](screenshots/2.png) that has some fields to fill out.
+
+(Putting in your passphrase at this point is optional; if you do, it'll
+try to unlock your account for you, but you're also free to unlock it
+manually as well)
+
+If you then click "Apply" it takes you to a screen that looks
+like [3.png](screenshots/3.png) with a transaction confirmation.
+
+If you then click "View Application" it takes you to a screen that looks
+like [4.png](screenshots/4.png) with the record of your application.
+
+At any time you can click "Switch Account" to get back to
+[1.png](screenshots/1.png).
+
 ## Details
 
 I chose Python because it's what I'm best at cranking out large amounts
