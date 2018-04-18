@@ -15,9 +15,10 @@ the morning of April 16.
 Using my project, I submitted my application to the Ropsten test network
 late at night on April 17. The address the application came from was
 0x74fcf3ea15d440ebcb7954c50f3ae429a640ddfb, the transaction hash was
-0x,
-and it became part of the Ropsten block chain in block number ,
-with block hash 0x.
+0xb3e64cf6a56494af20f722d6bc935e881f54e32ea1e3811a6d63cbda017e33f6,
+and it became part of the Ropsten block chain in block number 3060852,
+with block hash
+0xebde79a33e5a74f991a656a0a2476d83b09aac97a6c6badbea1bb301fb9bc197.
 
 ## Details
 
