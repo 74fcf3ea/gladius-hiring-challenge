@@ -1,0 +1,180 @@
+#!/usr/bin/env python
+
+try:
+    import cStringIO
+except ImportError:
+    # python 3 calls cStringIO something different...
+    class cStringIO (object):
+        StringIO = __import__('io').BytesIO
+import json
+import sys
+import tarfile
+
+import boto3
+
+name = sys.argv[1]
+config = json.load(open('aws.json', 'r'))
+
+ec2conn = boto3.resource(
+              'ec2',
+              aws_access_key_id=config['access_key_id'],
+              aws_secret_access_key=config['secret_access_key'],
+              region_name=config['region'])
+
+# This class creates user data suitable for consumption by the "configinit"
+# software. See
+# http://www.daemonology.net/blog/2013-12-09-FreeBSD-EC2-configinit.html
+# for more details.
+class Userdata (object):
+    def __init__(self):
+        self._f = cStringIO.StringIO()
+        self._tarfile = tarfile.open(fileobj=self._f, mode='w:gz')
+        self._next_file_num = 0
+
+    def finalize(self):
+        self._tarfile.close()
+        self._tarfile = None
+        f = self._f
+        self._f = None
+        return f.getvalue()
+
+    def write_file(self, filename, data, ensure_newline=True):
+        if ensure_newline and not data.endswith('\n'):
+            data += '\n'
+        self._addfile('>%s\n%s' % (filename, data))
+
+    def append_file(self, filename, data, ensure_newline=True):
+        if ensure_newline and not data.endswith('\n'):
+            data += '\n'
+        self._addfile('>>%s\n%s' % (filename, data))
+
+    def execute(self, data, interp='/bin/sh', ensure_newline=True):
+        if ensure_newline and not data.endswith('\n'):
+            data += '\n'
+        self._addfile('#!%s\n%s' % (interp, data))
+
+    def _addfile(self, s, executable=False):
+        s = self._make_byte_string(s)
+
+        # configinit doesn't care what the filename is. Make something up.
+        filename = str(self._next_file_num)
+        self._next_file_num += 1
+
+        # Make the TarInfo structure.
+        tarinfo = tarfile.TarInfo()
+        tarinfo.name = filename
+        tarinfo.type = tarfile.REGTYPE
+        if executable:
+            tarinfo.mode = 0o755
+        else:
+            tarinfo.mode = 0o644
+        tarinfo.size = len(s)
+
+        # Add it!
+        self._tarfile.addfile(tarinfo, cStringIO.StringIO(s))
+
+    @staticmethod
+    def _make_byte_string(s):
+        # In python 3, unicode strings tend to creep in...
+        try:
+            unicode
+        except NameError:
+            # python 3
+            if isinstance(s, str):
+                s = s.encode('us-ascii')
+        return s
+
+# We do *not* want to allow 8545 from the outside! Only 30303.
+security_group = \
+    ec2conn.create_security_group(GroupName=name, Description=name)
+for port in [22, 30303]:
+    security_group.authorize_ingress(
+        IpPermissions=[
+            {'IpProtocol': 'tcp',
+             'FromPort': port,
+             'ToPort': port,
+             'IpRanges': [{'CidrIp': '0.0.0.0/0'}]}
+        ])
+
+block_device_mappings = []
+image = ec2conn.Image(config['ami'])
+for block_device_mapping in image.block_device_mappings:
+    ebs = block_device_mapping.get('Ebs')
+    if ebs is not None:
+        ebs['DeleteOnTermination'] = True
+        ebs.pop('Encrypted', None)
+        block_device_mappings.append(block_device_mapping)
+block_device_mappings.append(
+    {'DeviceName': '/dev/sdb',
+     'Ebs': {'DeleteOnTermination': True,
+             'VolumeType': config['disk_type'],
+             'VolumeSize': config['disk_size']}})
+
+userdata = Userdata()
+
+userdata.execute(r'''
+newfs /dev/xbd1
+''')
+userdata.append_file('/etc/fstab', r'''
+/dev/xbd1	/home/ethereum	ufs	rw,late	1	1
+''')
+userdata.execute(r'''
+mkdir -p /home/ethereum
+mount /home/ethereum
+echo ethereum::::::Ethereum:/home/ethereum:/bin/sh: | adduser -w no -D -f -
+chown ethereum /home/ethereum
+''')
+
+userdata.execute(r'''
+mkdir -p /usr/local/etc/apache24/Includes
+''')
+userdata.write_file('/usr/local/etc/apache24/Includes/cgi.conf', r'''
+LoadModule cgi_module libexec/apache24/mod_cgi.so
+''')
+
+userdata.execute(r'''
+mkdir -p /usr/local/etc/rc.d
+''')
+userdata.write_file('/usr/local/etc/rc.d/ethereum', r'''
+#!/bin/sh
+
+# PROVIDE: ethereum
+# REQUIRE: LOGIN
+
+. /etc/rc.subr
+
+name="ethereum"
+rcvar="ethereum_enable"
+start_cmd="ethereum_start"
+stop_cmd=":"
+
+ethereum_start()
+{
+	logfile=/home/ethereum/log
+	touch "$logfile" && \
+	chown ethereum "$logfile" && \
+	su ethereum -c '/usr/local/bin/geth --testnet --rpc --rpcapi eth,personal > '"$logfile"' 2>&1 &'
+}
+
+load_rc_config $name
+run_rc_command "$1"
+''')
+userdata.execute(r'''
+chmod 755 /usr/local/etc/rc.d/ethereum
+''')
+
+userdata.append_file('/etc/rc.conf', r'''
+firstboot_pkgs_list="ca_root_nss python36 py36-virtualenv py36-gpgme apache24 solidity go-ethereum"
+ethereum_enable="YES"
+apache24_enable="YES"
+''')
+
+# This is a total hack due to the fact that we just circumvented the normal
+# package installation process and installed an init script of our own.
+userdata.execute(r'''
+. /etc/rc.subr
+load_rc_config ethereum
+touch ${firstboot_sentinel}-reboot
+''')
+
+(instance,) = ec2conn.create_instances(MinCount=1, MaxCount=1, BlockDeviceMappings=block_device_mappings, ImageId=config['ami'], InstanceType=config['instance_type'], KeyName=config['ssh_key_name'], SecurityGroupIds=[security_group.id], UserData=userdata.finalize())

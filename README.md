@@ -20,6 +20,52 @@ and it became part of the Ropsten block chain in block number 3060852,
 with block hash
 0xebde79a33e5a74f991a656a0a2476d83b09aac97a6c6badbea1bb301fb9bc197.
 
+## Installation
+
+Manual steps to install on FreeBSD 11 (as root):
+
+- `pkg install ca_root_nss python36 py36-virtualenv py36-gpgme apache24 solidity go-ethereum`
+- `echo 'apache24_enable="YES"' >> /etc/rc.conf`
+- Start up geth with:
+  - `geth --testnet --rpc --rpcapi eth,personal`
+  (my deployment script installs an rc.d script that does this, but that's
+  basically what it does)
+- Add your user to geth, or make a new one with `geth --testnet account new`
+- By default on FreeBSD apache comes with mod_cgi not enabled, so you have
+  to enable it:
+  - `mkdir -p /usr/local/etc/apache24/Includes`
+  - `echo 'LoadModule cgi_module libexec/apache24/mod_cgi.so' > /usr/local/etc/apache24/Includes/cgi.conf`
+- `virtualenv-3.6 --system-site-packages /usr/local/libexec/web3env`
+- `/usr/local/libexec/web3env/bin/pip3 install web3 py-solc`
+
+That creates the virtualenv in `/usr/local/libexec/web3env`. Then you can
+edit the shebang line in my `gladiusapp` script to point to the virtualenv,
+and copy it to the `cgi-bin` directory, as follows:
+
+- Edit `gladiusapp` and change the shebang line to `#!/usr/local/libexec/web3env/bin/python3`
+- `cp gladiusapp /usr/local/www/apache24/cgi-bin/gladiusapp`
+
+Note that the above steps take advantage of the pre-built `py36-gpgme`
+FreeBSD package, combined with the `--system-site-packages` option to
+virtualenv. I was not able to get the GPGME bindings to install from
+source, with pip; I kept getting compile errors when I tried to do
+that. But installing the FreeBSD package for it seemed to work.
+
+If you're braver than I was (or you're not on FreeBSD and you don't
+have the option of installing the GPGME bindings from the FreeBSD
+package), then I believe the proper PyPI name for them is just `gpg`, as
+in:
+- `/usr/local/libexec/web3env/bin/pip3 install gpg`
+
+Also note: I haven't tested these manual steps, per se; I was using
+a script that automatically deploys most of it to an EC2 instance.
+So all I had to do after the script gave me an instance, was make the
+virtualenv and copy the CGI script into place.
+
+My deployment script (awful cobbled-together thing that it is) is
+[mkplayground](mkplayground) in this directory. No warranties express
+or implied. :-) The manual steps above *should* be equivalent.
+
 ## Details
 
 I chose Python because it's what I'm best at cranking out large amounts

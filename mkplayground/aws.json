@@ -1,0 +1,9 @@
+{"access_key_id": "your amazon id",
+ "secret_access_key": "your amazon secret",
+ "ssh_key_name": "your amazon ssh keypair name",
+ "region": "us-west-1",
+ "ami": "ami-8b0128eb",
+ "instance_type": "t2.2xlarge",
+ "disk_type": "gp2",
+ "disk_size": 500
+}
